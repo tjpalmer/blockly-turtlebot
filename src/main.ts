@@ -5,7 +5,27 @@ module blockly_turtlebot {
 
 // Vars.
 
+var videoBuffer = <HTMLCanvasElement>document.createElement('canvas');
 var ros = new ROSLIB.Ros();
+
+// Robot drive control.
+// TODO Organize better?
+var cmdVel = new ROSLIB.Topic({
+  ros: ros,
+  name: '/cmd_vel',
+  messageType: 'geometry_msgs/Twist'
+});
+
+if (false) {
+  var rgbd = new ROSLIB.Topic({
+    ros: ros,
+    name: '/camera/rgb/image_color/theora',
+    messageType: 'theora_image_transport/Packet'
+  });
+  rgbd.subscribe(message => {
+    console.log('RGB at ' + message.header.stamp.secs);
+  });
+}
 
 /// From my key names to numeric codes.
 var keyCodes = {
@@ -20,7 +40,7 @@ var keyCodes = {
 var keyNames: {[code: number]: string;} = <{[code: number]: string;}>{};
 
 /// Constantly tracks which keys are down in the browser.
-var keysDown: {[key: string]: bool;} = {};
+var keysDown: any = {};
 
 // Initialization.
 
@@ -28,6 +48,9 @@ preload();
 window.addEventListener('load', () => {
   document.addEventListener('keydown', keyDown);
   document.addEventListener('keyup', keyUp);
+  // 10 Hz here.
+  // TODO Animation on separate requestAnimationFrame?
+  setInterval(updateRobot, 100);
 });
 
 // Functions.
@@ -80,5 +103,27 @@ function preload() {
 
 function storageName(name: string) =>
   window.location.href.split("#")[0] + "#" + name;
+
+function updateRobot() {
+  var twist = {
+    linear: {x: 0, y: 0, z: 0},
+    angular: {x: 0, y: 0, z: 0},
+  };
+  // Linear.
+  if (keysDown.up) {
+    twist.linear.x = 0.2;
+  } else if (keysDown.down) {
+    twist.linear.x = -0.2;
+  }
+  // Angular.
+  if (keysDown.left) {
+    // Z axis sticks out of the ground, and positive rotation is
+    // counterclockwise (right-handed coordinates).
+    twist.angular.z = 1;
+  } else if (keysDown.right) {
+    twist.angular.z = -1;
+  }
+  cmdVel.publish(new ROSLIB.Message(twist));
+}
 
 }
