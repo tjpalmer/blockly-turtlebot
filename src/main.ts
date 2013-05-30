@@ -5,7 +5,7 @@ module blockly_turtlebot {
 
 // Vars.
 
-var videoBuffer = <HTMLCanvasElement>document.createElement('canvas');
+var videoBuffer = buildVideoBuffer();
 var ros = new ROSLIB.Ros();
 
 // Robot drive control.
@@ -46,16 +46,32 @@ var keysDown: any = {};
 
 preload();
 window.addEventListener('load', () => {
+  // Watch keyboard.
   document.addEventListener('keydown', keyDown);
   document.addEventListener('keyup', keyUp);
-  // 10 Hz here.
+  // 10 Hz updates.
   // TODO Animation on separate requestAnimationFrame?
+  // TODO We need the data for live control, though ...
   setInterval(updateRobot, 100);
 });
 
 // Functions.
 
 function $(id) => <HTMLElement>document.getElementById(id);
+
+function $any(id) => <any>$(id);
+
+function $img(id) => <HTMLImageElement>$(id);
+
+function buildVideoBuffer(): HTMLCanvasElement {
+  // Now build the buffer.
+  var buffer = <HTMLCanvasElement>document.createElement('canvas');
+  // At half-size from the raw stream, we won't need to churn as many pixels.
+  // TODO Less hardcoding here!
+  buffer.width = 320;
+  buffer.height = 240;
+  return buffer;
+}
 
 function keyDown(event: KeyboardEvent) {
   var keyName = keyNames[event.keyCode];
@@ -84,7 +100,7 @@ function preload() {
   if (!robotUri) {
     // Build a default.
     // No host could be due to file uri or some such.
-    var host = document.location.host || "localhost";
+    var host = document.location.hostname || "localhost";
     robotUri = "ws://" + host + ":9090"
     localStorage.setItem(robotUriName, robotUri);
   }
@@ -104,7 +120,20 @@ function preload() {
 function storageName(name: string) =>
   window.location.href.split("#")[0] + "#" + name;
 
+function updateImageData() {
+  var video = $img('video');
+  var context = videoBuffer.getContext("2d");
+  var width = videoBuffer.width;
+  var height = videoBuffer.height;
+  context.drawImage(video, 0, 0, width, height);
+  var pixels = context.getImageData(0, 0, width, height).data;
+  console.log(pixels[0]);
+  // And now reload the image for pseudo-video.
+  video.src = video.src.replace(/&i=.*/, "&i=" + Math.random());
+}
+
 function updateRobot() {
+  updateImageData();
   var twist = {
     linear: {x: 0, y: 0, z: 0},
     angular: {x: 0, y: 0, z: 0},
