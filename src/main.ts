@@ -120,30 +120,23 @@ function preload() {
 function storageName(name: string) =>
   window.location.href.split("#")[0] + "#" + name;
 
-function updateImageData() {
-  var video = $img('video');
-  var context = videoBuffer.getContext("2d");
-  var width = videoBuffer.width;
-  var height = videoBuffer.height;
-  context.drawImage(video, 0, 0, width, height);
-  var pixels = context.getImageData(0, 0, width, height).data;
-  console.log(pixels[0]);
-  // And now reload the image for pseudo-video.
-  video.src = video.src.replace(/&i=.*/, "&i=" + Math.random());
-}
-
-function updateRobot() {
-  updateImageData();
+function updateControl() {
   var twist = {
     linear: {x: 0, y: 0, z: 0},
     angular: {x: 0, y: 0, z: 0},
   };
+
+  // TODO Use ai control, if activated.
+
   // Linear.
   if (keysDown.up) {
-    twist.linear.x = 0.2;
+    twist.linear.x = 1;
   } else if (keysDown.down) {
-    twist.linear.x = -0.2;
+    twist.linear.x = -1;
   }
+  // Scale-down to a hand-tweaked speed that works okay.
+  twist.linear.x *= 0.2;
+
   // Angular.
   if (keysDown.left) {
     // Z axis sticks out of the ground, and positive rotation is
@@ -152,7 +145,27 @@ function updateRobot() {
   } else if (keysDown.right) {
     twist.angular.z = -1;
   }
+  // Scale-down to a hand-tweaked speed that works okay.
+  twist.angular.z *= 0.5;
+
   cmdVel.publish(new ROSLIB.Message(twist));
+}
+
+function updateImageData() {
+  var video = $img('video');
+  var context = videoBuffer.getContext("2d");
+  context.drawImage(video, 0, 0);
+  var width = videoBuffer.width;
+  var height = videoBuffer.height;
+  var pixels = context.getImageData(0, 0, width, height).data;
+  //console.log(pixels[0]);
+  // And now reload the image for pseudo-video.
+  video.src = video.src.replace(/&i=.*/, "&i=" + Math.random());
+}
+
+function updateRobot() {
+  updateImageData();
+  updateControl();
 }
 
 }
