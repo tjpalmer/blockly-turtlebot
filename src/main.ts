@@ -46,6 +46,11 @@ var keysDown: any = {};
 
 preload();
 window.addEventListener('load', () => {
+  // Start up the video stream.
+  $img('video').src = [
+    "http://", getRobotHostname(), ":8081/snapshot",
+    "?topic=/camera/rgb/image_raw?quality=50?width=320?height=240&i=0",
+  ].join("");
   // Watch keyboard.
   document.addEventListener('keydown', keyDown);
   document.addEventListener('keyup', keyUp);
@@ -73,6 +78,20 @@ function buildVideoBuffer(): HTMLCanvasElement {
   return buffer;
 }
 
+function getRobotHostname(): string {
+  // Stored for dev override capability.
+  // No ui, because that would normally be burdensome.
+  var robotHostnameKey = storageKey("robot.hostname");
+  var robotHostname = localStorage.getItem(robotHostnameKey);
+  if (!robotHostname) {
+    // Record a default, so it can be easily looked up in the console.
+    // No hostname could be due to file uri or some such.
+    robotHostname = document.location.hostname || "localhost";
+    localStorage.setItem(robotHostnameKey, robotHostname);
+  }
+  return robotHostname;
+}
+
 function keyDown(event: KeyboardEvent) {
   var keyName = keyNames[event.keyCode];
   if (keyName) {
@@ -93,17 +112,7 @@ function preload() {
   // ROS.
   ros.on('error', error => {console.log(error)});
   ros.on('connection', error => {console.log("Connected!")});
-  // Load where we want to connect. This allows dev override of default.
-  // No ui, because that would normally be burdensome.
-  var robotUriName = storageName("robot.uri");
-  var robotUri = localStorage.getItem(robotUriName);
-  if (!robotUri) {
-    // Build a default.
-    // No host could be due to file uri or some such.
-    var host = document.location.hostname || "localhost";
-    robotUri = "ws://" + host + ":9090"
-    localStorage.setItem(robotUriName, robotUri);
-  }
+  var robotUri = "ws://" + getRobotHostname() + ":9090";
   console.log("Connecting to '" + robotUri + "'.");
   ros.connect(robotUri);
 
@@ -117,8 +126,8 @@ function preload() {
   console.log(keysDown);
 }
 
-function storageName(name: string) =>
-  window.location.href.split("#")[0] + "#" + name;
+function storageKey(id: string) =>
+  window.location.href.split("#")[0] + "#" + id;
 
 function updateControl() {
   var twist = {
