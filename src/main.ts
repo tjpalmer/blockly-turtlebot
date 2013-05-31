@@ -5,8 +5,10 @@ module blockly_turtlebot {
 
 // Vars.
 
-var videoBuffer = buildVideoBuffer();
+var aiFunction: () => any;
+var paused = false;
 var ros = new ROSLIB.Ros();
+var videoBuffer = buildVideoBuffer();
 
 // Robot drive control.
 // TODO Organize better?
@@ -32,6 +34,7 @@ var keyCodes = {
   down: 40,
   left: 37,
   right: 39,
+  space: 32,
   up: 38,
 };
 
@@ -46,18 +49,49 @@ var keysDown: any = {};
 
 preload();
 window.addEventListener('load', () => {
+  // Blockly.
+  Blockly.inject($('blockly'), {path: "../blockly/", toolbox: $('toolbox')});
+  // Override code finish, because we want to wrap the main code in a function
+  // but retain variables outside it for persistence.
+  // The alternative is to hack the generated code after the fact. No fun there.
+  redefine(Blockly.JavaScript, 'finish', defineFinishCode);
+  Blockly.addChangeListener(workspaceChanged);
+
   // Start up the video stream.
   $img('video').src = [
     "http://", getRobotHostname(), ":8081/snapshot",
     "?topic=/camera/rgb/image_raw?quality=50?width=320?height=240&i=0",
   ].join("");
+
   // Watch keyboard.
   document.addEventListener('keydown', keyDown);
   document.addEventListener('keyup', keyUp);
+
+  // Other event handlers.
+  // Focus game when disabling AI.
+  // When by mouse, this make sense. TODO Verify by mouse using cleverness?
+  $('ai').onclick = () => {if (!$input('ai').checked) $('video').focus()};
+  // Reset pause because we otherwise just get a blank canvas.
+  $input('pause').checked = false;
+  $('pause').onclick = handlePause;
+  $('update').onclick = updateCode;
+
+  // Restore saved blocks if any.
+  var blocksXml = localStorage.getItem(storageKey('blocks'));
+  if (blocksXml) {
+    var dom = Blockly.Xml.textToDom(blocksXml);
+    Blockly.Xml.domToWorkspace(Blockly.mainWorkspace, dom);
+  }
+
   // 10 Hz updates.
   // TODO Animation on separate requestAnimationFrame?
   // TODO We need the data for live control, though ...
   setInterval(updateRobot, 100);
+
+  // No op, but hey. Timeout because it wasn't disabling the button right.
+  setTimeout(() => {updateCode()}, 0);
+  // Finally, focus the video, so we start with manual control.
+  $('video').focus();
 });
 
 // Functions.
@@ -68,6 +102,8 @@ function $any(id) => <any>$(id);
 
 function $img(id) => <HTMLImageElement>$(id);
 
+function $input(id) => <HTMLInputElement>$(id);
+
 function buildVideoBuffer(): HTMLCanvasElement {
   // Now build the buffer.
   var buffer = <HTMLCanvasElement>document.createElement('canvas');
@@ -76,6 +112,25 @@ function buildVideoBuffer(): HTMLCanvasElement {
   buffer.width = 320;
   buffer.height = 240;
   return buffer;
+}
+
+/// Wraps the main generated statements in a returned function.
+/// Generated variables and functions should be outside this.
+function defineFinishCode(base) {
+  // TODO Indenting code lines would be nice.
+  return (code: string) => base([
+    // TODO This is still mario!!!
+    // Declare $$actions outside the returned function so that user-defined
+    // procedures also can access it.
+    "var $$actions;",
+    "return function() {",
+      // However, reset the value to empty at each decision step.
+      // TODO Indenting code here would be great.
+      "$$actions = {};",
+      code,
+      "return $$actions;",
+    "};",
+  ].join("\n"));
 }
 
 function getRobotHostname(): string {
@@ -92,12 +147,31 @@ function getRobotHostname(): string {
   return robotHostname;
 }
 
+function handlePause() {
+  if ($input('pause').checked) {
+    // TODO Send robot stop command.
+    // TODO Actually unsubscribe from topics?
+    // TODO Actually remove interval instead of tracking paused state?
+    paused = true;
+  } else {
+    paused = false;
+  }
+}
+
+function hasFocus() {
+  return document.activeElement == $('video');
+}
+
 function keyDown(event: KeyboardEvent) {
   var keyName = keyNames[event.keyCode];
   if (keyName) {
     keysDown[keyName] = true;
+    if (hasFocus() && keyName == 'space') {
+      var pause = $input('pause');
+      pause.checked = !pause.checked;
+      handlePause();
+    }
   }
-  console.log(keysDown);
 }
 
 function keyUp(event: KeyboardEvent) {
@@ -105,7 +179,6 @@ function keyUp(event: KeyboardEvent) {
   if (keyName) {
     keysDown[keyName] = false;
   }
-  console.log(keysDown);
 }
 
 function preload() {
@@ -126,8 +199,36 @@ function preload() {
   console.log(keysDown);
 }
 
+/// Allows easy wrap overriding.
+function redefine(object, name: string, define): void {
+  object[name] = define(object[name]);
+}
+
 function storageKey(id: string) =>
   window.location.href.split("#")[0] + "#" + id;
+
+function updateCode() {
+  var code = Blockly.Generator.workspaceToCode('JavaScript');
+  // Wrap in a function we can call at each update.
+  // TODO Do I want to capture or use time delta?
+  code = ["(function($$support) {", code, "})"].join("\n");
+  //console.log(code);
+  try {
+    // The code actually returns the function from inside it, so call the eval
+    // result immediately.
+    //aiFunction = eval(code)(new Support(app));
+    $input('ai').disabled = false;
+    // We got new code. Disable update for now.
+    $input('update').disabled = true;
+  } catch (e) {
+    alert("Error building code.");
+    aiFunction = null;
+    $input('ai').checked = false;
+    $input('ai').disabled = true;
+    // Disable AI control.
+    throw e;
+  }
+}
 
 function updateControl() {
   var twist = {
@@ -173,8 +274,20 @@ function updateImageData() {
 }
 
 function updateRobot() {
-  updateImageData();
-  updateControl();
+  if (!paused) {
+    updateImageData();
+    updateControl();
+  }
+}
+
+function workspaceChanged() {
+  // Let the user know they can recompile.
+  $('update').disabled = false;
+  // Also save immediately, although undo/redo would sure be nice.
+  var xml = Blockly.Xml.domToText(
+    Blockly.Xml.workspaceToDom(Blockly.mainWorkspace)
+  );
+  window.localStorage.setItem(storageKey('blocks'), xml);
 }
 
 }

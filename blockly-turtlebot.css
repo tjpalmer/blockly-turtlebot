@@ -1,3 +1,40 @@
+/* TODO Much of this is copied and pasted from blockly-mario.
+ * TODO Combine common elements into a single project?
+ */
+
+#app {
+  bottom: 0;
+  left: 0;
+  overflow: auto;
+  padding: 0;
+  position: fixed;
+  top: 0;
+  /* Note the dependencies between #blockly left and #app width.
+  /* Resizable might be nice sometime. */
+  width: 340px;
+}
+
+#blockly {
+  /* Bring in the bottom and right a little. Blockly is overshooting. */
+  bottom: 2px;
+  left: 340px;
+  position: fixed;
+  top: 0;
+  right: 2px;
+}
+
+#content > * {
+  margin: 10px;
+}
+
+#controls > * {
+  margin-right: 1em;
+}
+
+#controls > *:last-child {
+  margin: 0;
+}
+
 #video {
   height: 240px;
   width: 320px;
