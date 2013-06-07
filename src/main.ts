@@ -1,4 +1,5 @@
 /// <reference path="blockly.d.ts" />
+/// <reference path="blocks.ts" />
 /// <reference path="roslib.d.ts" />
 
 module blockly_turtlebot {
@@ -6,9 +7,42 @@ module blockly_turtlebot {
 // Vars.
 
 var aiFunction: () => any;
+var loadClears = false;
 var paused = false;
 var ros = new ROSLIB.Ros();
 var videoBuffer = buildVideoBuffer();
+
+// In-page logging functionality.
+var lastMessage = null;
+export function log(message) {
+  var consoleDiv = $('console');
+  //var wasScrolled = consoleDiv.scrollTop == consoleDiv.scrollHeight;
+  var escaped = String(message).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  // TODO Extract lastMessage by text content???
+  if (escaped === lastMessage) {
+    // Repeat message. Increment count.
+    var entryDiv = <HTMLElement>consoleDiv.lastChild;
+    var countSpan = <HTMLElement>entryDiv.firstChild;
+    if (!(countSpan instanceof Element)) {
+      // Still need to insert the count.
+      entryDiv.innerHTML =
+        '<span class="log-count">1</span>' + entryDiv.innerHTML;
+      countSpan = <HTMLElement>entryDiv.firstChild;
+    }
+    var count = Number(countSpan.innerHTML);
+    countSpan.innerHTML = String(count + 1);
+  } else {
+    // New message.
+    lastMessage = escaped;
+    consoleDiv.innerHTML += "<div>" + escaped + "</div>";
+  }
+  // Keep things from getting out of control.
+  while (consoleDiv.childNodes.length > 100) {
+    consoleDiv.removeChild(consoleDiv.firstChild);
+  }
+  // Too hard to get back to the bottom, but might be nice: if (wasScrolled)
+  consoleDiv.scrollTop = consoleDiv.scrollHeight;
+}
 
 // Robot drive control.
 // TODO Organize better?
@@ -32,6 +66,7 @@ if (false) {
 /// From my key names to numeric codes.
 var keyCodes = {
   down: 40,
+  enter: 13,
   left: 37,
   right: 39,
   space: 32,
@@ -58,7 +93,7 @@ window.addEventListener('load', () => {
   Blockly.addChangeListener(workspaceChanged);
 
   // Start up the video stream.
-  $img('video').src = [
+  $img('display').src = [
     "http://", getRobotHostname(), ":8081/snapshot",
     "?topic=/camera/rgb/image_raw?quality=50?width=320?height=240&i=0",
   ].join("");
@@ -70,17 +105,35 @@ window.addEventListener('load', () => {
   // Other event handlers.
   // Focus game when disabling AI.
   // When by mouse, this make sense. TODO Verify by mouse using cleverness?
-  $('ai').onclick = () => {if (!$input('ai').checked) $('video').focus()};
-  // Reset pause because we otherwise just get a blank canvas.
-  $input('pause').checked = false;
+  $('ai').onclick = () => {if (!$input('ai').checked) $('display').focus()};
+  // Reset checkboxes for Firefox.
+  ['ai', 'pause'].forEach(id => {
+    $input(id).checked = false;
+  });
   $('pause').onclick = handlePause;
   $('update').onclick = updateCode;
+  // File opening.
+  $('import').addEventListener('click', handleImport, false);
+  $('open').addEventListener('click', handleOpen, false);
+  $('file-chooser').addEventListener('change', handleFileChosen, false);
+  // TODO Testing: $('file-chooser').
+  // TODO   addEventListener('click', event => {console.log(event)}, false);
+  // Saving.
+  Blockly.bindEvent_(
+    Blockly.mainWorkspace.getCanvas(), 'blocklySelectChange', null,
+    selectionChanged
+  );
+  $('export').addEventListener('click', handleExport, false);
+
+  // Handle console resize.
+  window.addEventListener('resize', windowResized, false);
+  // And kick off initial sizing.
+  windowResized();
 
   // Restore saved blocks if any.
   var blocksXml = localStorage.getItem(storageKey('blocks'));
   if (blocksXml) {
-    var dom = Blockly.Xml.textToDom(blocksXml);
-    Blockly.Xml.domToWorkspace(Blockly.mainWorkspace, dom);
+    loadBlocksXml(blocksXml, true);
   }
 
   // 10 Hz updates.
@@ -90,13 +143,16 @@ window.addEventListener('load', () => {
 
   // No op, but hey. Timeout because it wasn't disabling the button right.
   setTimeout(() => {updateCode()}, 0);
-  // Finally, focus the video, so we start with manual control.
-  $('video').focus();
+
+  // Finally, focus the display, so we start with manual control.
+  $('display').focus();
 });
 
 // Functions.
 
 function $(id) => <HTMLElement>document.getElementById(id);
+
+function $a(id) => <HTMLLinkElement>$(id);
 
 function $any(id) => <any>$(id);
 
@@ -119,7 +175,6 @@ function buildVideoBuffer(): HTMLCanvasElement {
 function defineFinishCode(base) {
   // TODO Indenting code lines would be nice.
   return (code: string) => base([
-    // TODO This is still mario!!!
     // Declare $$actions outside the returned function so that user-defined
     // procedures also can access it.
     "var $$actions;",
@@ -147,6 +202,36 @@ function getRobotHostname(): string {
   return robotHostname;
 }
 
+function handleFileChosen(event) {
+  var files = event.target.files;
+  if (!files.length) {
+    // Nothing chosen. TODO Is that expected by the user in some cases?
+    return;
+  }
+  var reader = new FileReader;
+  reader.onload = (event) => {
+    loadBlocksXml(event.target.result, loadClears);
+  };
+  reader.readAsText(files[0]);
+}
+
+function handleExport(event) {
+  if (!Blockly.selected) {
+    alert("You must first select a block to export.");
+    event.preventDefault();
+  }
+}
+
+function handleImport() {
+  loadClears = false;
+  $('file-chooser').click();
+}
+
+function handleOpen() {
+  loadClears = true;
+  $('file-chooser').click();
+}
+
 function handlePause() {
   if ($input('pause').checked) {
     // TODO Send robot stop command.
@@ -159,17 +244,28 @@ function handlePause() {
 }
 
 function hasFocus() {
-  return document.activeElement == $('video');
+  return document.activeElement == $('display');
 }
 
 function keyDown(event: KeyboardEvent) {
   var keyName = keyNames[event.keyCode];
   if (keyName) {
     keysDown[keyName] = true;
-    if (hasFocus() && keyName == 'space') {
-      var pause = $input('pause');
-      pause.checked = !pause.checked;
-      handlePause();
+    if (hasFocus()) {
+      switch (keyName) {
+        case 'enter':
+          // Toggle AI.
+          var ai = $input('ai');
+          ai.checked = !ai.checked;
+          break;
+        case 'space':
+          // Toggle pause.
+          var pause = $input('pause');
+          pause.checked = !pause.checked;
+          handlePause();
+          break;
+      }
+      event.preventDefault();
     }
   }
 }
@@ -196,7 +292,19 @@ function preload() {
     // Presume keys up at first load. Probably survivable.
     keysDown[keyName] = false;
   }
-  console.log(keysDown);
+}
+
+function loadBlocksXml(blocksXml, clear) {
+  try {
+    var dom = Blockly.Xml.textToDom(blocksXml);
+    if (clear) {
+      Blockly.mainWorkspace.clear();
+    }
+    Blockly.Xml.domToWorkspace(Blockly.mainWorkspace, dom);
+  } catch (e) {
+    alert("Failed to open Blockly program.");
+    throw e;
+  }
 }
 
 /// Allows easy wrap overriding.
@@ -204,6 +312,23 @@ function redefine(object, name: string, define): void {
   object[name] = define(object[name]);
 }
 
+function selectionChanged() {
+  // Update export of current block. Default to nothing.
+  var link = "#";
+  if (Blockly.selected) {
+    // TODO blockToDom_ is not public. Keep an eye on it!
+    // TODO Further, it looks like it might be worth tweaking (x, y).
+    // TODO See Blockly.Xml.workspaceToDom.
+    var blockDom = Blockly.Xml.blockToDom_(Blockly.selected);
+    // TODO Is the xml surrounding element really needed?
+    var blockXml = "<xml>" + Blockly.Xml.domToText(blockDom) + "</xml>";
+    // TODO Customize download name by block type/name.
+    link = "data:text/plain," + encodeURIComponent(blockXml);
+  }
+  $a('export').href = link;
+}
+
+/// From BlocklyStorage strategy to keep named for this url.
 function storageKey(id: string) =>
   window.location.href.split("#")[0] + "#" + id;
 
@@ -216,7 +341,7 @@ function updateCode() {
   try {
     // The code actually returns the function from inside it, so call the eval
     // result immediately.
-    //aiFunction = eval(code)(new Support(app));
+    aiFunction = eval(code)({}); // new Support(app); // videoBuffer?
     $input('ai').disabled = false;
     // We got new code. Disable update for now.
     $input('update').disabled = true;
@@ -236,23 +361,48 @@ function updateControl() {
     angular: {x: 0, y: 0, z: 0},
   };
 
-  // TODO Use ai control, if activated.
+  // Default active keys to the actual keys.
+  var keysActive = keysDown;
+  var aiActive = $input('ai').checked && Boolean(aiFunction);
+  if (aiActive) {
+    // Run our AI, then extract the key presses from the actions.
+    // TODO Run AI function no matter what, for output.
+    // TODO What about dodging infinite loops and such?
+    // TODO Disable (until some toggle?) if run time was ever super long?
+    var actions = aiFunction();
+    keysActive = {};
+    var keyMap = {
+      // These could be done by toLowerCase, but perhaps not for other use
+      // cases (such as Mario).
+      DOWN: 'down',
+      LEFT: 'left',
+      RIGHT: 'right',
+      UP: 'up',
+    };
+    for (var actionName in actions) {
+      // Enjine checks loosely against null for false, so don't even bother to
+      // set pressed if not true.
+      if (actions[actionName]) {
+        keysActive[keyMap[actionName]] = true;
+      }
+    }
+  }
 
   // Linear.
-  if (keysDown.up) {
+  if (keysActive.up) {
     twist.linear.x = 1;
-  } else if (keysDown.down) {
+  } else if (keysActive.down) {
     twist.linear.x = -1;
   }
   // Scale-down to a hand-tweaked speed that works okay.
   twist.linear.x *= 0.2;
 
   // Angular.
-  if (keysDown.left) {
+  if (keysActive.left) {
     // Z axis sticks out of the ground, and positive rotation is
     // counterclockwise (right-handed coordinates).
     twist.angular.z = 1;
-  } else if (keysDown.right) {
+  } else if (keysActive.right) {
     twist.angular.z = -1;
   }
   // Scale-down to a hand-tweaked speed that works okay.
@@ -262,15 +412,15 @@ function updateControl() {
 }
 
 function updateImageData() {
-  var video = $img('video');
+  var display = $img('display');
   var context = videoBuffer.getContext("2d");
-  context.drawImage(video, 0, 0);
+  context.drawImage(display, 0, 0);
   var width = videoBuffer.width;
   var height = videoBuffer.height;
   var pixels = context.getImageData(0, 0, width, height).data;
   //console.log(pixels[0]);
   // And now reload the image for pseudo-video.
-  video.src = video.src.replace(/&i=.*/, "&i=" + Math.random());
+  display.src = display.src.replace(/&i=.*/, "&i=" + Math.random());
 }
 
 function updateRobot() {
@@ -278,6 +428,14 @@ function updateRobot() {
     updateImageData();
     updateControl();
   }
+}
+
+function windowResized() {
+  var console = $('console');
+  // We need 12 pixels presumably for the 1px border.
+  // TODO Could look that up somehow?
+  console.style.height =
+    ($('app').clientHeight - console.offsetTop - 12) + "px";
 }
 
 function workspaceChanged() {
@@ -288,6 +446,12 @@ function workspaceChanged() {
     Blockly.Xml.workspaceToDom(Blockly.mainWorkspace)
   );
   window.localStorage.setItem(storageKey('blocks'), xml);
+
+  // Update the save link.
+  // Chrome complained about security for xml, and default handlers for xml can
+  // be bad anyway.
+  // TODO Using percents and plainer text (not base64) might be nice.
+  $a('save').href = "data:text/plain," + encodeURIComponent(xml);
 }
 
 }

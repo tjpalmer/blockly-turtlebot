@@ -2,6 +2,11 @@
  * TODO Combine common elements into a single project?
  */
 
+/* Purposely override visited color. */
+a {
+  color: blue;
+}
+
 #app {
   bottom: 0;
   left: 0;
@@ -14,6 +19,10 @@
   width: 340px;
 }
 
+#app > * {
+  margin: 10px;
+}
+
 #blockly {
   /* Bring in the bottom and right a little. Blockly is overshooting. */
   bottom: 2px;
@@ -23,8 +32,11 @@
   right: 2px;
 }
 
-#content > * {
-  margin: 10px;
+#console {
+  border: 1px solid #CCCCCC;
+  min-height: 8em;
+  overflow: auto;
+  white-space: nowrap;
 }
 
 #controls > * {
@@ -35,7 +47,29 @@
   margin: 0;
 }
 
-#video {
+#display {
   height: 240px;
   width: 320px;
+}
+
+#file-chooser {
+  display: none;
+}
+
+#files {
+  position: fixed;
+  right: 1em;
+  top: 0;
+}
+
+#files > * {
+  margin-right: 1em;
+  text-decoration: none;
+}
+
+.log-count {
+  background: #CCCCCC;
+  color: white;
+  margin-right: 5px;
+  padding: 0 2px;
 }

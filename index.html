@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!--DOCTYPE html-->
 <!--
   Unfortunately, Blockly expects quirks mode.
   But that's obnoxious.
@@ -24,17 +24,16 @@
   </head>
   <body>
     <div id="app">
-      <div id="content">
         <div>
-          <!-- Use tabindex to make video focusable. -->
-          <img id="video" crossorigin tabindex="0"/>
+          <!-- Use tabindex to make display focusable. -->
+          <img id="display" width="320" height="240" crossorigin tabindex="0"/>
         </div>
         <div id="controls">
           <label><input id="pause" type="checkbox"/> Pause</label>
           <label><input id="ai" type="checkbox"/> AI Control</label>
           <input id="update" type="button" value="Update"/>
         </div>
-      </div>
+      <div id="console"></div>
     </div>
     <div id="blockly">
       <xml id="toolbox" style="display: none">
@@ -109,6 +108,13 @@
         </category>
         <category name="Variables" custom="VARIABLE"></category>
       </xml>
+    </div>
+    <div id="files">
+      <input id="file-chooser" type="file"/>
+      <a href="#" id="open">Open</a>
+      <a href="#" id="import">Import</a>
+      <a href="#" id="export" download="Mario Block.blockly">Export</a>
+      <a href="#" id="save" download="Mario.blockly">Save</a>
     </div>
   </body>
 </html>
