@@ -45,16 +45,21 @@
           </block>
           <block type="agent_turn">
             <value name="AMOUNT"><block type="math_number">
-              <title name="NUM">45</title>
+              <title name="NUM">30</title>
             </block></value>
           </block>
+          <block type="agent_colorAt"></block>
         </category>
-        <category name="Color">
+        <!--
+          We don't actually need colors at present.
+          Vision from "agent_color" is distinct r, g, and b.
+        -->
+        <!--category name="Color">
           <block type="colour_picker"></block>
           <block type="colour_rgb"></block>
           <block type="colour_blend"></block>
           <block type="colour_random"></block>
-        </category>
+        </category-->
         <!--
           Flow is usually called "Control" in Blockly, but for agent control,
           "control" is an overloaded term.
@@ -123,8 +128,8 @@
       <input id="file-chooser" type="file"/>
       <a href="#" id="open">Open</a>
       <a href="#" id="import">Import</a>
-      <a href="#" id="export" download="Mario Block.blockly">Export</a>
-      <a href="#" id="save" download="Mario.blockly">Save</a>
+      <a href="#" id="export" download="TurtleBot Block.blockly">Export</a>
+      <a href="#" id="save" download="TurtleBot.blockly">Save</a>
     </div>
   </body>
 </html>

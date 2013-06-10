@@ -1,6 +1,7 @@
 /// <reference path="blockly.d.ts" />
 /// <reference path="blocks.ts" />
 /// <reference path="roslib.d.ts" />
+/// <reference path="support.ts" />
 
 module blockly_turtlebot {
 
@@ -9,6 +10,7 @@ module blockly_turtlebot {
 var aiFunction: () => any;
 var loadClears = false;
 var paused = false;
+var support = new Support;
 var ros = new ROSLIB.Ros();
 var videoBuffer = buildVideoBuffer();
 
@@ -280,6 +282,32 @@ function keyUp(event: KeyboardEvent) {
   }
 }
 
+/// Given a potentially undefined numeric value, convert any null, undefined, or
+/// NaN  to 0, then limit the magnitude to being within the given limit, and
+/// return that new value.
+function limitValue(value: number, limit: number): number {
+  value = value || 0;
+  if (value < -limit) {
+    value = -limit;
+  } else if (value > limit) {
+    value = limit;
+  }
+  return value;
+}
+
+function loadBlocksXml(blocksXml, clear) {
+  try {
+    var dom = Blockly.Xml.textToDom(blocksXml);
+    if (clear) {
+      Blockly.mainWorkspace.clear();
+    }
+    Blockly.Xml.domToWorkspace(Blockly.mainWorkspace, dom);
+  } catch (e) {
+    alert("Failed to open Blockly program.");
+    throw e;
+  }
+}
+
 function preload() {
   // ROS.
   ros.on('error', error => {console.log(error)});
@@ -294,19 +322,6 @@ function preload() {
     keyNames[keyCode] = keyName;
     // Presume keys up at first load. Probably survivable.
     keysDown[keyName] = false;
-  }
-}
-
-function loadBlocksXml(blocksXml, clear) {
-  try {
-    var dom = Blockly.Xml.textToDom(blocksXml);
-    if (clear) {
-      Blockly.mainWorkspace.clear();
-    }
-    Blockly.Xml.domToWorkspace(Blockly.mainWorkspace, dom);
-  } catch (e) {
-    alert("Failed to open Blockly program.");
-    throw e;
   }
 }
 
@@ -344,7 +359,7 @@ function updateCode() {
   try {
     // The code actually returns the function from inside it, so call the eval
     // result immediately.
-    aiFunction = eval(code)({}); // new Support(app); // videoBuffer?
+    aiFunction = eval(code)(support);
     $input('ai').disabled = false;
     // We got new code. Disable update for now.
     $input('update').disabled = true;
@@ -365,7 +380,6 @@ function updateControl() {
   };
 
   // Default active keys to the actual keys.
-  var keysActive = keysDown;
   var aiActive = $input('ai').checked && Boolean(aiFunction);
   if (aiActive) {
     // Run our AI, then extract the key presses from the actions.
@@ -373,43 +387,34 @@ function updateControl() {
     // TODO What about dodging infinite loops and such?
     // TODO Disable (until some toggle?) if run time was ever super long?
     var actions = aiFunction();
-    keysActive = {};
-    var keyMap = {
-      // These could be done by toLowerCase, but perhaps not for other use
-      // cases (such as Mario).
-      DOWN: 'down',
-      LEFT: 'left',
-      RIGHT: 'right',
-      UP: 'up',
-    };
-    for (var actionName in actions) {
-      // Enjine checks loosely against null for false, so don't even bother to
-      // set pressed if not true.
-      if (actions[actionName]) {
-        keysActive[keyMap[actionName]] = true;
-      }
+    var drive = limitValue(actions.drive, 0.2);
+    var turn = limitValue(actions.turn, 30);
+    // Now change degrees to radians.
+    turn = -turn * Math.PI / 180;
+    // Update twist message.
+    twist.linear.x = drive;
+    twist.angular.z = turn;
+  } else {
+    // Use keyboard control.
+    // Linear.
+    if (keysDown.up) {
+      twist.linear.x = 1;
+    } else if (keysDown.down) {
+      twist.linear.x = -1;
     }
+    // Scale-down to a hand-tweaked speed that works okay.
+    twist.linear.x *= 0.2;
+    // Angular.
+    if (keysDown.left) {
+      // Z axis sticks out of the ground, and positive rotation is
+      // counterclockwise (right-handed coordinates).
+      twist.angular.z = 1;
+    } else if (keysDown.right) {
+      twist.angular.z = -1;
+    }
+    // Scale-down to a hand-tweaked speed that works okay.
+    twist.angular.z *= 0.5;
   }
-
-  // Linear.
-  if (keysActive.up) {
-    twist.linear.x = 1;
-  } else if (keysActive.down) {
-    twist.linear.x = -1;
-  }
-  // Scale-down to a hand-tweaked speed that works okay.
-  twist.linear.x *= 0.2;
-
-  // Angular.
-  if (keysActive.left) {
-    // Z axis sticks out of the ground, and positive rotation is
-    // counterclockwise (right-handed coordinates).
-    twist.angular.z = 1;
-  } else if (keysActive.right) {
-    twist.angular.z = -1;
-  }
-  // Scale-down to a hand-tweaked speed that works okay.
-  twist.angular.z *= 0.5;
 
   cmdVel.publish(new ROSLIB.Message(twist));
 }
@@ -420,8 +425,8 @@ function updateImageData() {
   context.drawImage(display, 0, 0);
   var width = videoBuffer.width;
   var height = videoBuffer.height;
-  var pixels = context.getImageData(0, 0, width, height).data;
-  //console.log(pixels[0]);
+  support.pixels = context.getImageData(0, 0, width, height).data;
+  //console.log(support.pixels[0]);
   // And now reload the image for pseudo-video.
   display.src = display.src.replace(/&i=.*/, "&i=" + Math.random());
 }
