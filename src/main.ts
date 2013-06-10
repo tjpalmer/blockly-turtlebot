@@ -264,6 +264,9 @@ function keyDown(event: KeyboardEvent) {
           pause.checked = !pause.checked;
           handlePause();
           break;
+        default:
+          // Avoid preventDefault.
+          return;
       }
       event.preventDefault();
     }
